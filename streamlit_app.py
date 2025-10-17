@@ -11,6 +11,7 @@ Usage:
 """
 
 import streamlit as st
+import streamlit.components.v1 as components
 import io
 import os
 import sys
@@ -366,7 +367,7 @@ def prep_frame_for_model(pil_img, max_side=512):
     return pil_img
 
 def encode_video(frames_bgr, fps, out_path):
-    """Encode video from BGR frames."""
+    """Encode video from BGR frames with better compatibility."""
     if not OPENCV_AVAILABLE:
         raise RuntimeError("OpenCV not available for video encoding")
     
@@ -377,8 +378,24 @@ def encode_video(frames_bgr, fps, out_path):
     w -= (w % 2)  # Ensure even dimensions
     h -= (h % 2)
     
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    writer = cv2.VideoWriter(out_path, fourcc, fps, (w, h))
+    # Try different codecs for better compatibility
+    codecs_to_try = [
+        cv2.VideoWriter_fourcc(*"mp4v"),  # MP4V codec
+        cv2.VideoWriter_fourcc(*"XVID"),  # XVID codec
+        cv2.VideoWriter_fourcc(*"MJPG"),  # Motion JPEG
+    ]
+    
+    writer = None
+    for fourcc in codecs_to_try:
+        try:
+            writer = cv2.VideoWriter(out_path, fourcc, fps, (w, h))
+            if writer.isOpened():
+                break
+        except:
+            continue
+    
+    if writer is None or not writer.isOpened():
+        raise RuntimeError("Could not create video writer with any codec")
     
     try:
         for frame in frames_bgr:
@@ -387,6 +404,27 @@ def encode_video(frames_bgr, fps, out_path):
             writer.write(frame_resized)
     finally:
         writer.release()
+
+def validate_video_file(video_path):
+    """Validate that a video file is properly encoded and readable."""
+    if not OPENCV_AVAILABLE:
+        return False, "OpenCV not available for validation"
+    
+    try:
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            return False, "Cannot open video file"
+        
+        # Check if we can read at least one frame
+        ret, frame = cap.read()
+        cap.release()
+        
+        if not ret or frame is None:
+            return False, "Cannot read frames from video"
+        
+        return True, "Video file is valid"
+    except Exception as e:
+        return False, f"Validation error: {e}"
 
 def concatenate_videos(video_paths, output_path, fps):
     """Concatenate multiple video files into one."""
@@ -938,11 +976,53 @@ Platform: {sys.platform}
                                 st.subheader("Enhanced Video")
                                 
                                 # Read the output video file
-                                with open(output_path, "rb") as video_file:
-                                    video_bytes = video_file.read()
-                                
-                                # Display video
-                                st.video(video_bytes)
+                                try:
+                                    with open(output_path, "rb") as video_file:
+                                        video_bytes = video_file.read()
+                                    
+                                    # Check if video file exists and has content
+                                    if len(video_bytes) == 0:
+                                        st.error("❌ Enhanced video file is empty!")
+                                        return
+                                    
+                                    st.info(f"📹 Video file size: {len(video_bytes) / (1024*1024):.1f} MB")
+                                    
+                                    # Validate video file
+                                    is_valid, validation_msg = validate_video_file(output_path)
+                                    if is_valid:
+                                        st.success(f"✅ {validation_msg}")
+                                    else:
+                                        st.warning(f"⚠️ {validation_msg}")
+                                    
+                                    # Display video with error handling
+                                    try:
+                                        st.video(video_bytes)
+                                        st.success("✅ Video displayed successfully!")
+                                    except Exception as video_error:
+                                        st.error(f"❌ Failed to display video: {video_error}")
+                                        
+                                        # Try alternative display method
+                                        st.info("🔄 Trying alternative video display method...")
+                                        try:
+                                            # Create a base64 encoded video for HTML display
+                                            import base64
+                                            video_base64 = base64.b64encode(video_bytes).decode()
+                                            video_html = f"""
+                                            <video width="100%" controls>
+                                                <source src="data:video/mp4;base64,{video_base64}" type="video/mp4">
+                                                Your browser does not support the video tag.
+                                            </video>
+                                            """
+                                            components.html(video_html, height=400)
+                                            st.success("✅ Video displayed using alternative method!")
+                                        except Exception as alt_error:
+                                            st.error(f"❌ Alternative display also failed: {alt_error}")
+                                            st.info("💡 Please use the download button to get your enhanced video.")
+                                        
+                                except FileNotFoundError:
+                                    st.error(f"❌ Enhanced video file not found: {output_path}")
+                                except Exception as file_error:
+                                    st.error(f"❌ Error reading video file: {file_error}")
                                 
                                 # Download button
                                 st.download_button(
