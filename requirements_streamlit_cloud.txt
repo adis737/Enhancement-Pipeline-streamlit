@@ -1,0 +1,31 @@
+# Streamlit Cloud Requirements for UDnet Underwater Image Enhancement
+# ===================================================================
+# Optimized for cloud deployment without system dependencies
+
+# Core Streamlit dependencies
+streamlit>=1.28.0
+
+# Core ML dependencies
+torch>=1.7.0
+torchvision>=0.8.0
+numpy>=1.19.0
+Pillow>=8.0.0
+scikit-image>=0.17.0
+scipy>=1.5.0
+
+# Optional ONNX Runtime for edge deployment
+onnxruntime>=1.12.0
+
+# Visualization and utilities
+matplotlib>=3.3.0
+tqdm>=4.50.0
+PyYAML>=5.3.0
+
+# Note: OpenCV is excluded due to system library dependencies
+# The app will use fallback implementations for UIQM calculation
+
+# Installation:
+# pip install -r requirements_streamlit_cloud.txt
+
+# Run the app:
+# streamlit run streamlit_app.py

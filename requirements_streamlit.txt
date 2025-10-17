@@ -11,7 +11,7 @@ torchvision>=0.8.0
 numpy>=1.19.0
 Pillow>=8.0.0
 scikit-image>=0.17.0
-opencv-python>=4.4.0
+opencv-python>=4.4.0  # Optional - app works without it
 scipy>=1.5.0
 
 # Optional ONNX Runtime for edge deployment

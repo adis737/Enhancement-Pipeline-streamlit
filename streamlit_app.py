@@ -17,7 +17,14 @@ import time
 import numpy as np
 from PIL import Image
 from skimage.metrics import peak_signal_noise_ratio, structural_similarity
-import cv2
+
+# Try to import OpenCV, but make it optional for cloud deployment
+try:
+    import cv2
+    OPENCV_AVAILABLE = True
+except ImportError:
+    OPENCV_AVAILABLE = False
+    st.warning("⚠️ OpenCV not available - some features may be limited")
 
 # Import the core enhancement functionality
 from udnet_infer import UDNetEnhancer
@@ -155,25 +162,48 @@ def load_models():
 def calculate_uiqm(img_array):
     """Calculate Underwater Image Quality Measure (UIQM) - Memory optimized."""
     try:
-        # Convert to LAB color space
-        lab = cv2.cvtColor(img_array, cv2.COLOR_RGB2LAB)
-        l, a, b = cv2.split(lab)
-        
-        # UIQM components
-        uicm = np.mean(np.sqrt(np.var(a) + np.var(b)))
-        
-        # Sharpness measure using Laplacian
-        gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
-        laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
-        uism = laplacian_var / 1000.0
-        
-        # Contrast measure
-        uiconm = np.std(gray) / 255.0
-        
-        # UIQM formula
-        uiqm = 0.0282 * uicm + 0.2953 * uism + 3.5753 * uiconm
-        
-        return float(uiqm)
+        if OPENCV_AVAILABLE:
+            # Use OpenCV for accurate LAB conversion and Laplacian
+            lab = cv2.cvtColor(img_array, cv2.COLOR_RGB2LAB)
+            l, a, b = cv2.split(lab)
+            
+            # UIQM components
+            uicm = np.mean(np.sqrt(np.var(a) + np.var(b)))
+            
+            # Sharpness measure using Laplacian
+            gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+            laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
+            uism = laplacian_var / 1000.0
+            
+            # Contrast measure
+            uiconm = np.std(gray) / 255.0
+            
+            # UIQM formula
+            uiqm = 0.0282 * uicm + 0.2953 * uism + 3.5753 * uiconm
+            
+            return float(uiqm)
+        else:
+            # Fallback calculation without OpenCV
+            # Convert RGB to grayscale manually
+            gray = np.dot(img_array[...,:3], [0.299, 0.587, 0.114])
+            
+            # Simple colorfulness measure (approximation)
+            r, g, b = img_array[:,:,0], img_array[:,:,1], img_array[:,:,2]
+            uicm = np.mean(np.sqrt(np.var(r) + np.var(g) + np.var(b))) / 100.0
+            
+            # Simple sharpness measure (edge detection approximation)
+            # Use Sobel-like edge detection
+            sobel_x = np.abs(np.diff(gray, axis=1))
+            sobel_y = np.abs(np.diff(gray, axis=0))
+            uism = (np.mean(sobel_x) + np.mean(sobel_y)) / 1000.0
+            
+            # Contrast measure
+            uiconm = np.std(gray) / 255.0
+            
+            # UIQM formula (adjusted for fallback)
+            uiqm = 0.0282 * uicm + 0.2953 * uism + 3.5753 * uiconm
+            
+            return float(uiqm)
     except Exception as e:
         st.warning(f"UIQM calculation error: {e}")
         return 0.0
@@ -349,7 +379,8 @@ def main():
         
         # Device info
         st.subheader("System Info")
-        st.info(f"**Device:** {device}\n**GPU Mode:** {gpu_mode}\n**ONNX Available:** {onnx_session is not None}")
+        opencv_status = "✅ Available" if OPENCV_AVAILABLE else "⚠️ Not Available"
+        st.info(f"**Device:** {device}\n**GPU Mode:** {gpu_mode}\n**ONNX Available:** {onnx_session is not None}\n**OpenCV:** {opencv_status}")
         
         # Jetson simulation controls
         st.subheader("Jetson Simulation")
