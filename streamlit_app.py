@@ -50,44 +50,77 @@ st.set_page_config(
 # Custom CSS for better styling
 st.markdown("""
 <style>
-    /* Hide GitHub link and sharing options */
-    .stDeployButton {
+    /* Hide all header elements */
+    .stApp > header {
         display: none !important;
     }
     
-    /* Hide the hamburger menu items */
-    .stApp > header {
-        visibility: hidden !important;
-    }
-    
-    /* Hide the main menu */
-    .stApp > div:first-child {
-        padding-top: 1rem;
-    }
-    
-    /* Hide Streamlit branding */
+    /* Hide the entire top bar */
     .stApp > div[data-testid="stHeader"] {
         display: none !important;
     }
     
-    /* Hide the deploy button */
-    .stDeployButton {
+    /* Hide share button and related elements */
+    .stDeployButton,
+    .stShareButton,
+    [data-testid="stDeployButton"],
+    [data-testid="stShareButton"] {
         display: none !important;
     }
     
-    /* Hide the share button */
-    .stShareButton {
+    /* Hide GitHub link and star */
+    .stApp a[href*="github.com"],
+    .stApp a[href*="github.io"],
+    .stApp button[aria-label*="star"],
+    .stApp button[aria-label*="Star"] {
         display: none !important;
     }
     
-    /* Hide the GitHub link */
-    .stApp > div[data-testid="stHeader"] > div > div > div > div > a {
+    /* Hide the three dots menu */
+    .stApp button[aria-label*="more"],
+    .stApp button[aria-label*="More"],
+    .stApp button[aria-label*="menu"],
+    .stApp button[aria-label*="Menu"] {
         display: none !important;
     }
     
-    /* Hide the hamburger menu */
-    .stApp > div[data-testid="stHeader"] > div > div > div > div > button {
+    /* Hide edit button */
+    .stApp button[aria-label*="edit"],
+    .stApp button[aria-label*="Edit"] {
         display: none !important;
+    }
+    
+    /* Hide all buttons in the header area */
+    .stApp > div[data-testid="stHeader"] button,
+    .stApp > header button {
+        display: none !important;
+    }
+    
+    /* Hide all links in the header area */
+    .stApp > div[data-testid="stHeader"] a,
+    .stApp > header a {
+        display: none !important;
+    }
+    
+    /* Hide the entire top navigation */
+    .stApp > div:first-child > div:first-child {
+        display: none !important;
+    }
+    
+    /* Adjust main content padding */
+    .stApp > div:first-child {
+        padding-top: 0 !important;
+    }
+    
+    /* Hide any remaining header elements */
+    .stApp > div[data-testid="stHeader"] * {
+        display: none !important;
+    }
+    
+    /* Force hide all header elements with JavaScript */
+    .stApp > div[data-testid="stHeader"] {
+        height: 0 !important;
+        overflow: hidden !important;
     }
     
     .main-header {
@@ -133,6 +166,54 @@ st.markdown("""
         color: #f57c00;
     }
 </style>
+""", unsafe_allow_html=True)
+
+# JavaScript to forcefully hide header elements
+st.markdown("""
+<script>
+// Function to hide header elements
+function hideHeaderElements() {
+    // Hide all header elements
+    const headers = document.querySelectorAll('[data-testid="stHeader"]');
+    headers.forEach(header => {
+        header.style.display = 'none';
+        header.style.visibility = 'hidden';
+        header.style.height = '0';
+        header.style.overflow = 'hidden';
+    });
+    
+    // Hide share button
+    const shareButtons = document.querySelectorAll('[data-testid="stShareButton"]');
+    shareButtons.forEach(btn => btn.style.display = 'none');
+    
+    // Hide deploy button
+    const deployButtons = document.querySelectorAll('[data-testid="stDeployButton"]');
+    deployButtons.forEach(btn => btn.style.display = 'none');
+    
+    // Hide GitHub links
+    const githubLinks = document.querySelectorAll('a[href*="github.com"], a[href*="github.io"]');
+    githubLinks.forEach(link => link.style.display = 'none');
+    
+    // Hide star buttons
+    const starButtons = document.querySelectorAll('button[aria-label*="star"], button[aria-label*="Star"]');
+    starButtons.forEach(btn => btn.style.display = 'none');
+    
+    // Hide edit buttons
+    const editButtons = document.querySelectorAll('button[aria-label*="edit"], button[aria-label*="Edit"]');
+    editButtons.forEach(btn => btn.style.display = 'none');
+    
+    // Hide menu buttons
+    const menuButtons = document.querySelectorAll('button[aria-label*="more"], button[aria-label*="More"]');
+    menuButtons.forEach(btn => btn.style.display = 'none');
+}
+
+// Run on page load
+document.addEventListener('DOMContentLoaded', hideHeaderElements);
+
+// Run after a delay to catch dynamically loaded elements
+setTimeout(hideHeaderElements, 1000);
+setTimeout(hideHeaderElements, 3000);
+</script>
 """, unsafe_allow_html=True)
 
 # Initialize session state

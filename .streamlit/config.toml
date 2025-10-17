@@ -1,15 +1,24 @@
 [global]
 # Disable the GitHub link and sharing options
 showErrorDetails = false
+developmentMode = false
 
 [server]
 # Hide the hamburger menu
 enableCORS = false
 enableXsrfProtection = false
+enableWebsocketCompression = false
 
 [browser]
 # Disable the GitHub link in the browser
 gatherUsageStats = false
+serverAddress = "localhost"
+serverPort = 8501
+
+[client]
+# Disable client-side features
+showErrorDetails = false
+toolbarMode = "minimal"
 
 [theme]
 # Custom theme to hide elements
