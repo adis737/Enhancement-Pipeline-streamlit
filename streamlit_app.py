@@ -136,11 +136,33 @@ def load_models():
     try:
         # Auto-select device
         import torch
-        # Force CPU mode for PyTorch to avoid CUDA issues
-        device = "cpu"
-        gpu_mode = False
+        # Try GPU first, fallback to CPU
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        gpu_mode = torch.cuda.is_available()
         
-        # Load ONNX model first (more reliable and memory efficient)
+        # Load PyTorch model for image enhancement (primary)
+        enhancer = None
+        try:
+            weights_path = os.path.join("weights", "UDnet.pth")
+            enhancer = UDNetEnhancer(
+                weights_path=weights_path, device=device, gpu_mode=gpu_mode
+            )
+            st.success(f"✅ PyTorch model loaded successfully on {device.upper()}")
+        except Exception as e:
+            st.warning(f"⚠️ PyTorch model failed to load: {e}")
+            # Fallback to CPU if GPU fails
+            if device == "cuda":
+                try:
+                    device = "cpu"
+                    gpu_mode = False
+                    enhancer = UDNetEnhancer(
+                        weights_path=weights_path, device=device, gpu_mode=gpu_mode
+                    )
+                    st.info("🔄 PyTorch model loaded on CPU (GPU fallback)")
+                except Exception as cpu_error:
+                    st.error(f"❌ PyTorch model failed on both GPU and CPU: {cpu_error}")
+        
+        # Load ONNX model for video processing (memory efficient)
         onnx_session = None
         try:
             import onnxruntime as ort
@@ -150,19 +172,11 @@ def load_models():
                     onnx_path,
                     providers=["CPUExecutionProvider"]
                 )
-        except Exception:
-            pass
-        
-        # Load PyTorch model as fallback (may fail due to memory)
-        enhancer = None
-        try:
-            weights_path = os.path.join("weights", "UDnet.pth")
-            enhancer = UDNetEnhancer(
-                weights_path=weights_path, device=device, gpu_mode=gpu_mode
-            )
+                st.success("✅ ONNX model loaded successfully for video processing")
+            else:
+                st.warning("⚠️ ONNX model file not found - video processing will be unavailable")
         except Exception as e:
-            # PyTorch model failed to load (likely memory issue)
-            pass
+            st.warning(f"⚠️ ONNX model failed to load: {e}")
         
         return enhancer, onnx_session, device, gpu_mode
     except Exception as e:
@@ -687,11 +701,11 @@ def main():
     with st.sidebar:
         st.header("🎛️ Controls")
         
-        # Model selection (prioritize ONNX for better compatibility)
+        # Model selection (PyTorch for images, ONNX for videos)
         model_type = st.selectbox(
-            "Select Model",
-            ["ONNX Runtime (CPU)", "PyTorch (GPU/CPU)"],
-            help="Model selection applies to image processing. Video processing always uses ONNX for memory efficiency."
+            "Select Model for Image Processing",
+            ["PyTorch (GPU/CPU)", "ONNX Runtime (CPU)"],
+            help="PyTorch model is recommended for image processing. Video processing always uses ONNX for memory efficiency."
         )
         
         # Enhancement parameters
@@ -702,8 +716,10 @@ def main():
         # Device info
         st.subheader("System Info")
         opencv_status = "✅ Available" if OPENCV_AVAILABLE else "⚠️ Not Available"
+        pytorch_status = "✅ Available" if enhancer is not None else "❌ Not Available"
+        onnx_status = "✅ Available" if onnx_session is not None else "❌ Not Available"
         video_processing = "✅ ONNX Only" if onnx_session is not None else "❌ Unavailable"
-        st.info(f"**Device:** {device}\n**GPU Mode:** {gpu_mode}\n**ONNX Available:** {onnx_session is not None}\n**OpenCV:** {opencv_status}\n**Video Processing:** {video_processing}")
+        st.info(f"**Device:** {device}\n**GPU Mode:** {gpu_mode}\n**PyTorch Model:** {pytorch_status}\n**ONNX Model:** {onnx_status}\n**OpenCV:** {opencv_status}\n**Video Processing:** {video_processing}")
         
         # Debug information for OpenCV
         if st.checkbox("Show OpenCV Debug Info"):
@@ -770,22 +786,37 @@ Platform: {sys.platform}
                         start_time = time.time()
                         
                         try:
-                            # Select model
-                            if model_type == "ONNX Runtime (CPU)" and st.session_state.onnx_session is not None:
+                            # Select model (prioritize PyTorch for images)
+                            if model_type == "PyTorch (GPU/CPU)" and st.session_state.enhancer is not None:
+                                enhanced_image = st.session_state.enhancer.enhance_image(
+                                    image,
+                                    max_side=512,
+                                    neutralize_cast=neutralize_cast,
+                                    saturation=saturation
+                                )
+                                model_used = "PyTorch"
+                            elif model_type == "ONNX Runtime (CPU)" and st.session_state.onnx_session is not None:
                                 enhanced_image = enhance_image_onnx(image, neutralize_cast, saturation)
                                 model_used = "ONNX Runtime"
                             else:
-                                if st.session_state.enhancer is None:
-                                    st.error("PyTorch model not loaded!")
-                                    enhanced_image = None
-                                else:
+                                # Fallback logic
+                                if st.session_state.enhancer is not None:
+                                    st.info("🔄 Using PyTorch model (fallback)")
                                     enhanced_image = st.session_state.enhancer.enhance_image(
                                         image,
                                         max_side=512,
                                         neutralize_cast=neutralize_cast,
                                         saturation=saturation
                                     )
-                                model_used = "PyTorch"
+                                    model_used = "PyTorch"
+                                elif st.session_state.onnx_session is not None:
+                                    st.info("🔄 Using ONNX model (fallback)")
+                                    enhanced_image = enhance_image_onnx(image, neutralize_cast, saturation)
+                                    model_used = "ONNX Runtime"
+                                else:
+                                    st.error("❌ No models available!")
+                                    enhanced_image = None
+                                    model_used = "None"
                             
                             processing_time = (time.time() - start_time) * 1000
                             
@@ -845,7 +876,7 @@ Platform: {sys.platform}
             st.info("While video processing is unavailable, you can still enhance individual frames using the Image Enhancement tab.")
         else:
             st.success("✅ Video processing is available!")
-            st.info("💡 **Note:** Video processing always uses the ONNX model for optimal memory efficiency, regardless of your model selection above.")
+            st.info("💡 **Note:** Video processing always uses the ONNX model for optimal memory efficiency, while image processing uses your selected model above.")
             
             # Video processing parameters
             col1, col2 = st.columns(2)
