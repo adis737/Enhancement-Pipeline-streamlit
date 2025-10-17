@@ -691,7 +691,7 @@ def main():
         model_type = st.selectbox(
             "Select Model",
             ["ONNX Runtime (CPU)", "PyTorch (GPU/CPU)"],
-            help="ONNX model is recommended for better compatibility and memory efficiency"
+            help="Model selection applies to image processing. Video processing always uses ONNX for memory efficiency."
         )
         
         # Enhancement parameters
@@ -702,7 +702,8 @@ def main():
         # Device info
         st.subheader("System Info")
         opencv_status = "✅ Available" if OPENCV_AVAILABLE else "⚠️ Not Available"
-        st.info(f"**Device:** {device}\n**GPU Mode:** {gpu_mode}\n**ONNX Available:** {onnx_session is not None}\n**OpenCV:** {opencv_status}")
+        video_processing = "✅ ONNX Only" if onnx_session is not None else "❌ Unavailable"
+        st.info(f"**Device:** {device}\n**GPU Mode:** {gpu_mode}\n**ONNX Available:** {onnx_session is not None}\n**OpenCV:** {opencv_status}\n**Video Processing:** {video_processing}")
         
         # Debug information for OpenCV
         if st.checkbox("Show OpenCV Debug Info"):
@@ -844,6 +845,7 @@ Platform: {sys.platform}
             st.info("While video processing is unavailable, you can still enhance individual frames using the Image Enhancement tab.")
         else:
             st.success("✅ Video processing is available!")
+            st.info("💡 **Note:** Video processing always uses the ONNX model for optimal memory efficiency, regardless of your model selection above.")
             
             # Video processing parameters
             col1, col2 = st.columns(2)
@@ -872,20 +874,29 @@ Platform: {sys.platform}
                     st.metric("Filename", uploaded_video.name)
                 
                 # Process video button
-                if st.button("🚀 Enhance Video", type="primary"):
+                if st.session_state.onnx_session is None:
+                    st.error("⚠️ ONNX model not loaded - video processing unavailable")
+                    st.info("Please restart the app or check if the ONNX model file exists.")
+                elif st.button("🚀 Enhance Video", type="primary"):
                     with st.spinner("Processing video... This may take a while."):
                         start_time = time.time()
                         
                         try:
-                            # Process video
-                            output_path, output_filename = process_video_streamlit(
-                                uploaded_video, 
-                                model_type, 
-                                neutralize_cast, 
-                                saturation,
-                                max_side=max_side,
-                                target_fps=target_fps
-                            )
+                            # Process video (always use ONNX for memory efficiency)
+                            video_model_type = "ONNX Runtime (CPU)"  # Force ONNX for video processing
+                            if st.session_state.onnx_session is None:
+                                st.error("ONNX model not available for video processing!")
+                                output_path, output_filename = None, None
+                            else:
+                                st.info("🎯 Using ONNX model for video processing (memory optimized)")
+                                output_path, output_filename = process_video_streamlit(
+                                    uploaded_video, 
+                                    video_model_type,  # Always ONNX
+                                    neutralize_cast, 
+                                    saturation,
+                                    max_side=max_side,
+                                    target_fps=target_fps
+                                )
                             
                             processing_time = time.time() - start_time
                             
