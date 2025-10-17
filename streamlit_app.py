@@ -39,12 +39,57 @@ st.set_page_config(
     page_title="UDnet Underwater Image Enhancement",
     page_icon="🌊",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
+    menu_items={
+        'Get Help': None,
+        'Report a bug': None,
+        'About': None
+    }
 )
 
 # Custom CSS for better styling
 st.markdown("""
 <style>
+    /* Hide GitHub link and sharing options */
+    .stDeployButton {
+        display: none !important;
+    }
+    
+    /* Hide the hamburger menu items */
+    .stApp > header {
+        visibility: hidden !important;
+    }
+    
+    /* Hide the main menu */
+    .stApp > div:first-child {
+        padding-top: 1rem;
+    }
+    
+    /* Hide Streamlit branding */
+    .stApp > div[data-testid="stHeader"] {
+        display: none !important;
+    }
+    
+    /* Hide the deploy button */
+    .stDeployButton {
+        display: none !important;
+    }
+    
+    /* Hide the share button */
+    .stShareButton {
+        display: none !important;
+    }
+    
+    /* Hide the GitHub link */
+    .stApp > div[data-testid="stHeader"] > div > div > div > div > a {
+        display: none !important;
+    }
+    
+    /* Hide the hamburger menu */
+    .stApp > div[data-testid="stHeader"] > div > div > div > div > button {
+        display: none !important;
+    }
+    
     .main-header {
         font-size: 3rem;
         font-weight: 700;

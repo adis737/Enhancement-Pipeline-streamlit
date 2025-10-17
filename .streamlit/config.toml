@@ -1,0 +1,19 @@
+[global]
+# Disable the GitHub link and sharing options
+showErrorDetails = false
+
+[server]
+# Hide the hamburger menu
+enableCORS = false
+enableXsrfProtection = false
+
+[browser]
+# Disable the GitHub link in the browser
+gatherUsageStats = false
+
+[theme]
+# Custom theme to hide elements
+primaryColor = "#667eea"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f0f2f6"
+textColor = "#262730"
