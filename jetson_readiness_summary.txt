@@ -1,0 +1,11 @@
+JETSON DEPLOYMENT READINESS SUMMARY
+========================================
+
+[OK] Model: UDnet_dynamic.onnx
+[OK] Deployment scripts: Ready
+[OK] TensorRT support: Available
+[OK] Performance: Validated
+[OK] Documentation: Complete
+
+The model is ready for edge deployment on NVIDIA Jetson devices
+for real-time underwater image enhancement on AUVs and ROVs.

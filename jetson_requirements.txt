@@ -1,0 +1,35 @@
+# NVIDIA Jetson Requirements for UDnet Deployment
+# ================================================
+# Install these packages on your Jetson device
+
+# Core dependencies
+numpy>=1.21.0
+opencv-python>=4.5.0
+Pillow>=8.0.0
+onnxruntime-gpu>=1.12.0
+
+# Optional: For TensorRT optimization (usually included in JetPack)
+# tensorrt>=8.5.0
+# pycuda>=2021.1
+
+# Development and testing
+matplotlib>=3.5.0
+tqdm>=4.60.0
+
+# Note: Install JetPack 5.0+ which includes:
+# - CUDA 11.4+
+# - cuDNN 8.6+
+# - TensorRT 8.5+
+# - Python 3.8+
+
+# Installation commands for Jetson:
+# sudo apt update
+# sudo apt install python3-pip
+# pip3 install -r jetson_requirements.txt
+
+# For ONNX Runtime with CUDA support:
+# pip3 install onnxruntime-gpu
+
+# Verify installation:
+# python3 -c "import tensorrt; print('TensorRT version:', tensorrt.__version__)"
+# python3 -c "import onnxruntime; print('ONNX Runtime providers:', onnxruntime.get_available_providers())"

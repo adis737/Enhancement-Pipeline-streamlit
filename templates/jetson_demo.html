@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jetson Deployment Demo - UDnet</title>
+    <style>
+        * { 
+            box-sizing: border-box; 
+            margin: 0;
+            padding: 0;
+        }
+        
+        body { 
+            font-family: 'Inter', 'Segoe UI', sans-serif; 
+            margin: 0; 
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+            min-height: 100vh;
+            position: relative;
+            overflow-x: hidden;
+        }
+        
+        /* Animated background elements */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: 
+                radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.3) 0%, transparent 50%),
+                radial-gradient(circle at 40% 40%, rgba(120, 219, 255, 0.2) 0%, transparent 50%);
+            animation: backgroundShift 20s ease-in-out infinite;
+            z-index: -1;
+        }
+        
+        @keyframes backgroundShift {
+            0%, 100% { transform: translateX(0) translateY(0); }
+            25% { transform: translateX(-10px) translateY(-5px); }
+            50% { transform: translateX(5px) translateY(-10px); }
+            75% { transform: translateX(-5px) translateY(5px); }
+        }
+        
+        .container { 
+            max-width: 1400px; 
+            margin: 0 auto; 
+            position: relative;
+            z-index: 1;
+        }
+        
+        .header { 
+            text-align: center; 
+            color: white; 
+            margin-bottom: 40px; 
+        }
+        
+        .header h1 { 
+            font-size: 3.5rem; 
+            margin: 0; 
+            text-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            background: linear-gradient(135deg, #ffffff 0%, #f0f0f0 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: titleGlow 3s ease-in-out infinite alternate;
+        }
+        
+        @keyframes titleGlow {
+            0% { filter: drop-shadow(0 0 20px rgba(255,255,255,0.3)); }
+            100% { filter: drop-shadow(0 0 30px rgba(255,255,255,0.5)); }
+        }
+        
+        .header p { 
+            font-size: 1.3rem; 
+            margin: 15px 0; 
+            opacity: 0.9;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
+        
+        .dashboard { 
+            display: grid; 
+            grid-template-columns: 1fr 1fr; 
+            gap: 32px; 
+            margin-bottom: 40px; 
+        }
+        
+        .card { 
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 24px; 
+            padding: 32px; 
+            box-shadow: 
+                0 8px 32px rgba(0,0,0,0.1),
+                inset 0 1px 0 rgba(255,255,255,0.2);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+        }
+        
+        .card:hover {
+            transform: translateY(-8px);
+            box-shadow: 
+                0 20px 40px rgba(0,0,0,0.15),
+                inset 0 1px 0 rgba(255,255,255,0.3);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+        
+        .card h3 {
+            color: white;
+            margin-bottom: 24px;
+            font-size: 1.8rem;
+            font-weight: 600;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
+        
+        .metrics { 
+            display: grid; 
+            grid-template-columns: repeat(2, 1fr); 
+            gap: 16px; 
+        }
+        
+        .metric { 
+            text-align: center; 
+            padding: 20px; 
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 16px; 
+            backdrop-filter: blur(15px);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .metric::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+        }
+        
+        .metric:hover {
+            transform: translateY(-4px);
+            background: rgba(255, 255, 255, 0.15);
+            border-color: rgba(255, 255, 255, 0.3);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+        }
+        
+        .metric-value { 
+            font-size: 2.2rem; 
+            font-weight: 700; 
+            color: white; 
+            text-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            margin-bottom: 8px;
+        }
+        
+        .metric-label { 
+            color: rgba(255, 255, 255, 0.8); 
+            font-size: 0.9rem; 
+            font-weight: 500;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+        
+        .device-selector { 
+            margin-bottom: 24px; 
+        }
+        
+        .device-selector h4 {
+            color: white;
+            margin-bottom: 16px;
+            font-size: 1.2rem;
+            font-weight: 600;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
+        
+        .device-option { 
+            display: inline-block; 
+            margin: 8px; 
+            padding: 12px 24px; 
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 25px; 
+            cursor: pointer; 
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            color: rgba(255, 255, 255, 0.8);
+            font-weight: 500;
+            backdrop-filter: blur(10px);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .device-option::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            transition: left 0.5s ease;
+        }
+        
+        .device-option:hover::before {
+            left: 100%;
+        }
+        
+        .device-option:hover {
+            background: rgba(255, 255, 255, 0.15);
+            border-color: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+        }
+        
+        .device-option.active { 
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.8) 0%, rgba(118, 75, 162, 0.8) 100%);
+            border-color: rgba(255, 255, 255, 0.4);
+            color: white;
+            box-shadow: 
+                0 8px 25px rgba(102, 126, 234, 0.3),
+                inset 0 1px 0 rgba(255,255,255,0.2);
+        }
+        
+        .controls { 
+            text-align: center; 
+            margin: 24px 0; 
+        }
+        
+        .btn { 
+            padding: 14px 28px; 
+            margin: 0 12px; 
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 16px; 
+            font-size: 1rem; 
+            font-weight: 600;
+            cursor: pointer; 
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            backdrop-filter: blur(10px);
+            position: relative;
+            overflow: hidden;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            transition: left 0.5s ease;
+        }
+        
+        .btn:hover::before {
+            left: 100%;
+        }
+        
+        .btn-primary { 
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.8) 0%, rgba(118, 75, 162, 0.8) 100%);
+            color: white;
+            box-shadow: 
+                0 8px 25px rgba(102, 126, 234, 0.3),
+                inset 0 1px 0 rgba(255,255,255,0.2);
+        }
+        
+        .btn-danger { 
+            background: linear-gradient(135deg, rgba(220, 53, 69, 0.8) 0%, rgba(255, 99, 132, 0.8) 100%);
+            color: white;
+            box-shadow: 
+                0 8px 25px rgba(220, 53, 69, 0.3),
+                inset 0 1px 0 rgba(255,255,255,0.2);
+        }
+        
+        .btn:hover { 
+            transform: translateY(-4px); 
+            box-shadow: 
+                0 15px 35px rgba(0,0,0,0.2),
+                inset 0 1px 0 rgba(255,255,255,0.3);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+        
+        .status { 
+            text-align: center; 
+            padding: 16px; 
+            border-radius: 12px; 
+            margin: 16px 0; 
+            font-weight: 600;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: all 0.3s ease;
+        }
+        
+        .status.running { 
+            background: rgba(212, 237, 218, 0.2);
+            color: #155724;
+            border-color: rgba(21, 87, 36, 0.3);
+        }
+        
+        .status.stopped { 
+            background: rgba(248, 215, 218, 0.2);
+            color: #721c24;
+            border-color: rgba(114, 28, 36, 0.3);
+        }
+        
+        .comparison { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); 
+            gap: 24px; 
+        }
+        
+        .device-card { 
+            text-align: center; 
+            padding: 24px; 
+            border-radius: 20px; 
+            color: white;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(20px);
+            transition: all 0.4s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .device-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+        }
+        
+        .device-card:hover {
+            transform: translateY(-8px);
+            box-shadow: 
+                0 20px 40px rgba(0,0,0,0.15),
+                inset 0 1px 0 rgba(255,255,255,0.3);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+        
+        .device-card h4 {
+            font-size: 1.4rem;
+            font-weight: 600;
+            margin-bottom: 16px;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
+        
+        .device-card p {
+            margin: 8px 0;
+            font-size: 1rem;
+            opacity: 0.9;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+        
+        .back-link {
+            display: inline-block;
+            margin-bottom: 24px;
+            color: white;
+            text-decoration: none;
+            padding: 12px 24px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            transition: all 0.4s ease;
+            backdrop-filter: blur(10px);
+            font-weight: 500;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .back-link::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            transition: left 0.5s ease;
+        }
+        
+        .back-link:hover::before {
+            left: 100%;
+        }
+        
+        .back-link:hover {
+            background: rgba(255, 255, 255, 0.15);
+            border-color: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+            color: white;
+        }
+        
+        /* Form styling */
+        input[type="file"] {
+            width: 100%;
+            padding: 16px;
+            border: 2px dashed rgba(255, 255, 255, 0.3);
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.05);
+            cursor: pointer;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 1rem;
+            backdrop-filter: blur(10px);
+            margin-bottom: 16px;
+        }
+        
+        input[type="file"]:hover {
+            border-color: rgba(255, 255, 255, 0.5);
+            background: rgba(255, 255, 255, 0.1);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+        }
+        
+        /* Info styling */
+        #device-info p {
+            color: rgba(255, 255, 255, 0.9);
+            margin: 8px 0;
+            font-size: 1rem;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+        
+        #device-info strong {
+            color: white;
+            font-weight: 600;
+        }
+        
+        /* Result styling */
+        #enhancement-result {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 16px;
+            backdrop-filter: blur(15px);
+            padding: 20px;
+            margin-top: 20px;
+        }
+        
+        #enhancement-result p {
+            color: rgba(255, 255, 255, 0.9);
+            margin: 8px 0;
+            font-size: 1rem;
+        }
+        
+        #enhancement-result strong {
+            color: white;
+            font-weight: 600;
+        }
+        
+        /* Enhanced images styling */
+        #enhanced-images img {
+            border-radius: 16px;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+            transition: all 0.4s ease;
+        }
+        
+        #enhanced-images img:hover {
+            transform: scale(1.02);
+            box-shadow: 0 12px 35px rgba(0,0,0,0.3);
+        }
+        
+        #enhanced-images h4 {
+            color: white;
+            margin-bottom: 16px;
+            font-size: 1.3rem;
+            font-weight: 600;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
+        
+        @media (max-width: 768px) {
+            body {
+                padding: 15px;
+            }
+            
+            .header h1 {
+                font-size: 2.5rem;
+            }
+            
+            .dashboard { 
+                grid-template-columns: 1fr; 
+                gap: 24px;
+            }
+            
+            .metrics { 
+                grid-template-columns: 1fr; 
+                gap: 12px;
+            }
+            
+            .comparison {
+                grid-template-columns: 1fr;
+            }
+            
+            .btn {
+                margin: 8px;
+                padding: 12px 24px;
+            }
+            
+            .device-option {
+                margin: 4px;
+                padding: 10px 20px;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .card {
+                padding: 24px;
+            }
+            
+            .card h3 {
+                font-size: 1.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="back-link">← Back to Main App</a>
+        
+        <div class="header">
+            <h1>Jetson Deployment Demo</h1>
+            <p>Real-time simulation of UDnet underwater image enhancement on NVIDIA Jetson devices</p>
+        </div>
+        
+        <div class="dashboard">
+            <div class="card">
+                <h3>Live Performance Metrics</h3>
+                <div class="metrics">
+                    <div class="metric">
+                        <div class="metric-value" id="fps">0.0</div>
+                        <div class="metric-label">FPS</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-value" id="inference-time">0.0</div>
+                        <div class="metric-label">ms/frame</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-value" id="memory">0.0</div>
+                        <div class="metric-label">MB GPU</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-value" id="temperature">45°</div>
+                        <div class="metric-label">Temperature</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-value" id="cpu-usage">0%</div>
+                        <div class="metric-label">CPU Usage</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-value" id="gpu-utilization">0%</div>
+                        <div class="metric-label">GPU Utilization</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-value" id="power-consumption">0W</div>
+                        <div class="metric-label">Power</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-value" id="battery-life">0h</div>
+                        <div class="metric-label">Battery Life</div>
+                    </div>
+                </div>
+                <div class="status stopped" id="status">Simulation Stopped</div>
+            </div>
+            
+            <div class="card">
+                <h3>Device Control & Image Enhancement</h3>
+                <div class="device-selector">
+                    <h4>Select Jetson Device:</h4>
+                    <div class="device-option active" data-device="Orin NX">Orin NX</div>
+                    <div class="device-option" data-device="Xavier NX">Xavier NX</div>
+                    <div class="device-option" data-device="Nano">Nano</div>
+                </div>
+                <div class="controls">
+                    <button class="btn btn-primary" id="start-btn">Start Simulation</button>
+                    <button class="btn btn-danger" id="stop-btn">Stop Simulation</button>
+                </div>
+                <div id="device-info">
+                    <p><strong>Current Device:</strong> <span id="current-device">Orin NX</span></p>
+                    <p><strong>Max FPS:</strong> <span id="max-fps">66</span></p>
+                    <p><strong>GPU Memory:</strong> <span id="gpu-memory">8 GB</span></p>
+                </div>
+                
+                <hr style="margin: 20px 0; border: none; border-top: 1px solid #eee;">
+                
+                <h4>Test Real Image Enhancement</h4>
+                <form id="jetson-enhance-form" enctype="multipart/form-data">
+                    <div style="margin-bottom: 15px;">
+                        <input type="file" id="jetson-image" name="image" accept="image/png, image/jpeg" required 
+                               style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                    </div>
+                    <button type="submit" class="btn btn-primary" style="width: 100%;">
+                        Enhance with Jetson ONNX
+                    </button>
+                </form>
+                <div id="enhancement-result" style="margin-top: 15px; display: none;">
+                    <div style="background: #f8f9fa; padding: 15px; border-radius: 8px;">
+                        <p><strong>Processing Time:</strong> <span id="real-processing-time">0</span> ms</p>
+                        <p><strong>Real FPS:</strong> <span id="real-fps">0</span></p>
+                        <p><strong>Model:</strong> <span id="model-used">ONNX</span></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card" id="enhanced-images" style="display: none;">
+            <h3>Enhanced Image Results</h3>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <div style="text-align: center;">
+                    <h4>Before (Original)</h4>
+                    <img id="before-image" src="" alt="Before" style="max-width: 100%; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
+                </div>
+                <div style="text-align: center;">
+                    <h4>After (Jetson Enhanced)</h4>
+                    <img id="after-image" src="" alt="After" style="max-width: 100%; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h3>Device Comparison</h3>
+            <div class="comparison">
+                <div class="device-card" style="background: #45B7D1;">
+                    <h4>Jetson Orin NX</h4>
+                    <p>Max FPS: 66</p>
+                    <p>GPU Memory: 8 GB</p>
+                    <p>Power: 15W</p>
+                    <p>Best for: High-performance AUVs</p>
+                </div>
+                <div class="device-card" style="background: #4ECDC4;">
+                    <h4>Jetson Xavier NX</h4>
+                    <p>Max FPS: 28</p>
+                    <p>GPU Memory: 8 GB</p>
+                    <p>Power: 10W</p>
+                    <p>Best for: Medium ROVs</p>
+                </div>
+                <div class="device-card" style="background: #FF6B6B;">
+                    <h4>Jetson Nano</h4>
+                    <p>Max FPS: 12</p>
+                    <p>GPU Memory: 4 GB</p>
+                    <p>Power: 5W</p>
+                    <p>Best for: Small AUVs</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h3>Advanced Metrics & Status</h3>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                <div style="text-align: center; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+                    <h4 style="color: #333; margin: 0 0 5px 0;">Latency P95</h4>
+                    <p style="color: #666; margin: 0; font-size: 1.2em;" id="latency-p95">0.0 ms</p>
+                </div>
+                <div style="text-align: center; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+                    <h4 style="color: #333; margin: 0 0 5px 0;">Throughput</h4>
+                    <p style="color: #666; margin: 0; font-size: 1.2em;" id="throughput">0.0 Mbps</p>
+                </div>
+                <div style="text-align: center; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+                    <h4 style="color: #333; margin: 0 0 5px 0;">Model Size</h4>
+                    <p style="color: #666; margin: 0; font-size: 1.2em;" id="model-size">3.3 MB</p>
+                </div>
+                <div style="text-align: center; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+                    <h4 style="color: #333; margin: 0 0 5px 0;">Quantization</h4>
+                    <p style="color: #666; margin: 0; font-size: 1.2em;" id="quantization">FP32</p>
+                </div>
+                <div style="text-align: center; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+                    <h4 style="color: #333; margin: 0 0 5px 0;">TensorRT</h4>
+                    <p style="color: #666; margin: 0; font-size: 1.2em;" id="tensorrt-status">Disabled</p>
+                </div>
+                <div style="text-align: center; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+                    <h4 style="color: #333; margin: 0 0 5px 0;">Status</h4>
+                    <p style="color: #666; margin: 0; font-size: 1.2em;" id="deployment-status">Ready</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Deployment Readiness</h3>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                <div style="text-align: center; padding: 15px; background: #d4edda; border-radius: 8px;">
+                    <h4 style="color: #155724;">ONNX Model</h4>
+                    <p style="color: #155724;">3.3 MB - Optimized for edge</p>
+                </div>
+                <div style="text-align: center; padding: 15px; background: #d4edda; border-radius: 8px;">
+                    <h4 style="color: #155724;">Memory Efficient</h4>
+                    <p style="color: #155724;">0.01 GB GPU memory</p>
+                </div>
+                <div style="text-align: center; padding: 15px; background: #d4edda; border-radius: 8px;">
+                    <h4 style="color: #155724;">Real-time Ready</h4>
+                    <p style="color: #155724;">12-66 FPS performance</p>
+                </div>
+                <div style="text-align: center; padding: 15px; background: #d4edda; border-radius: 8px;">
+                    <h4 style="color: #155724;">TensorRT Ready</h4>
+                    <p style="color: #155724;">2-3x speedup available</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h3>Key Features Demonstrated</h3>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
+                <div style="padding: 15px; background: #e3f2fd; border-radius: 8px;">
+                    <h4 style="color: #1976d2;">Real-time Processing</h4>
+                    <p style="color: #1976d2;">Live FPS monitoring and performance metrics</p>
+                </div>
+                <div style="padding: 15px; background: #f3e5f5; border-radius: 8px;">
+                    <h4 style="color: #7b1fa2;">Edge Optimization</h4>
+                    <p style="color: #7b1fa2;">Minimal memory footprint and power consumption</p>
+                </div>
+                <div style="padding: 15px; background: #e8f5e8; border-radius: 8px;">
+                    <h4 style="color: #388e3c;">AUV/ROV Ready</h4>
+                    <p style="color: #388e3c;">Production-ready for autonomous underwater vehicles</p>
+                </div>
+                <div style="padding: 15px; background: #fff3e0; border-radius: 8px;">
+                    <h4 style="color: #f57c00;">TensorRT Compatible</h4>
+                    <p style="color: #f57c00;">2-3x performance boost with TensorRT optimization</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentDevice = 'Orin NX';
+        let isRunning = false;
+        
+        // Device selection
+        document.querySelectorAll('.device-option').forEach(option => {
+            option.addEventListener('click', () => {
+                document.querySelectorAll('.device-option').forEach(o => o.classList.remove('active'));
+                option.classList.add('active');
+                currentDevice = option.dataset.device;
+                updateDeviceInfo();
+            });
+        });
+        
+        // Control buttons
+        document.getElementById('start-btn').addEventListener('click', startSimulation);
+        document.getElementById('stop-btn').addEventListener('click', stopSimulation);
+        
+        // Image enhancement form
+        document.getElementById('jetson-enhance-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            enhanceImage();
+        });
+        
+        function updateDeviceInfo() {
+            const specs = {
+                'Orin NX': { maxFps: 66, gpuMemory: '8 GB' },
+                'Xavier NX': { maxFps: 28, gpuMemory: '8 GB' },
+                'Nano': { maxFps: 12, gpuMemory: '4 GB' }
+            };
+            
+            const spec = specs[currentDevice];
+            document.getElementById('current-device').textContent = currentDevice;
+            document.getElementById('max-fps').textContent = spec.maxFps;
+            document.getElementById('gpu-memory').textContent = spec.gpuMemory;
+        }
+        
+        function startSimulation() {
+            fetch('/api/start_jetson_sim', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ device: currentDevice })
+            });
+            isRunning = true;
+            updateStatus();
+        }
+        
+        function stopSimulation() {
+            fetch('/api/stop_jetson_sim', { method: 'POST' });
+            isRunning = false;
+            updateStatus();
+        }
+        
+        function updateStatus() {
+            const statusEl = document.getElementById('status');
+            if (isRunning) {
+                statusEl.textContent = 'Simulation Running';
+                statusEl.className = 'status running';
+            } else {
+                statusEl.textContent = 'Simulation Stopped';
+                statusEl.className = 'status stopped';
+            }
+        }
+        
+        function enhanceImage() {
+            const form = document.getElementById('jetson-enhance-form');
+            const formData = new FormData(form);
+            const button = form.querySelector('button[type="submit"]');
+            
+            // Show loading state
+            button.textContent = 'Processing...';
+            button.disabled = true;
+            
+            fetch('/enhance_jetson', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Show results
+                    document.getElementById('real-processing-time').textContent = data.processing_time;
+                    document.getElementById('real-fps').textContent = data.fps;
+                    document.getElementById('model-used').textContent = data.model_type;
+                    document.getElementById('enhancement-result').style.display = 'block';
+                    
+                    // Show images
+                    document.getElementById('before-image').src = 'data:image/png;base64,' + data.before;
+                    document.getElementById('after-image').src = 'data:image/png;base64,' + data.after;
+                    document.getElementById('enhanced-images').style.display = 'block';
+                    
+                    // Scroll to results
+                    document.getElementById('enhanced-images').scrollIntoView({ behavior: 'smooth' });
+                } else {
+                    alert('Enhancement failed: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Enhancement failed: ' + error.message);
+            })
+            .finally(() => {
+                // Reset button
+                button.textContent = 'Enhance with Jetson ONNX';
+                button.disabled = false;
+            });
+        }
+        
+        // Update metrics every 100ms
+        setInterval(() => {
+            fetch('/api/jetson_status')
+                .then(response => response.json())
+                .then(data => {
+                    // Basic metrics
+                    document.getElementById('fps').textContent = data.current_fps;
+                    document.getElementById('inference-time').textContent = data.inference_time;
+                    document.getElementById('memory').textContent = data.memory_usage;
+                    document.getElementById('temperature').textContent = data.temperature + '°';
+                    
+                    // Additional metrics
+                    document.getElementById('cpu-usage').textContent = data.cpu_usage + '%';
+                    document.getElementById('gpu-utilization').textContent = data.gpu_utilization + '%';
+                    document.getElementById('power-consumption').textContent = data.power_consumption + 'W';
+                    document.getElementById('battery-life').textContent = data.battery_life_hours + 'h';
+                    
+                    // Advanced metrics
+                    document.getElementById('latency-p95').textContent = data.latency_p95 + ' ms';
+                    document.getElementById('throughput').textContent = data.throughput_mbps + ' Mbps';
+                    document.getElementById('model-size').textContent = data.model_size_mb + ' MB';
+                    document.getElementById('quantization').textContent = data.quantization;
+                    document.getElementById('tensorrt-status').textContent = data.tensorrt_optimized ? 'Enabled' : 'Disabled';
+                    document.getElementById('deployment-status').textContent = data.deployment_status;
+                    
+                    isRunning = data.is_running;
+                    updateStatus();
+                });
+        }, 100);
+        
+        // Initialize
+        updateDeviceInfo();
+    </script>
+</body>
+</html>

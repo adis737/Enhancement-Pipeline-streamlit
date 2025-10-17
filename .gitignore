@@ -1,0 +1,16 @@
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+uw_env/
+
+# Python cache
+__pycache__/
+
+# Image files
+*.png
+*.mp4
