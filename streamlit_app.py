@@ -135,35 +135,65 @@ st.markdown("""
     }
     
     .metric-card {
-        background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+        background: linear-gradient(135deg, rgba(102, 126, 234, 0.15) 0%, rgba(118, 75, 162, 0.15) 100%);
         padding: 1rem;
         border-radius: 10px;
-        border: 1px solid rgba(102, 126, 234, 0.2);
+        border: 1px solid rgba(102, 126, 234, 0.3);
         margin: 0.5rem 0;
+        color: #fafafa;
     }
     
     .jetson-card {
-        background: linear-gradient(135deg, rgba(69, 183, 209, 0.1) 0%, rgba(78, 205, 196, 0.1) 100%);
+        background: linear-gradient(135deg, rgba(69, 183, 209, 0.15) 0%, rgba(78, 205, 196, 0.15) 100%);
         padding: 1rem;
         border-radius: 10px;
-        border: 1px solid rgba(69, 183, 209, 0.2);
+        border: 1px solid rgba(69, 183, 209, 0.3);
         margin: 0.5rem 0;
+        color: #fafafa;
     }
     
     .success-message {
-        background: linear-gradient(135deg, rgba(76, 175, 80, 0.1) 0%, rgba(139, 195, 74, 0.1) 100%);
+        background: linear-gradient(135deg, rgba(76, 175, 80, 0.15) 0%, rgba(139, 195, 74, 0.15) 100%);
         padding: 1rem;
         border-radius: 10px;
-        border: 1px solid rgba(76, 175, 80, 0.2);
-        color: #2e7d32;
+        border: 1px solid rgba(76, 175, 80, 0.3);
+        color: #81c784;
     }
     
     .warning-message {
-        background: linear-gradient(135deg, rgba(255, 152, 0, 0.1) 0%, rgba(255, 193, 7, 0.1) 100%);
+        background: linear-gradient(135deg, rgba(255, 152, 0, 0.15) 0%, rgba(255, 193, 7, 0.15) 100%);
         padding: 1rem;
         border-radius: 10px;
-        border: 1px solid rgba(255, 152, 0, 0.2);
-        color: #f57c00;
+        border: 1px solid rgba(255, 152, 0, 0.3);
+        color: #ffb74d;
+    }
+    
+    /* Dark mode enhancements */
+    .stApp {
+        background-color: #0e1117;
+    }
+    
+    .stSidebar {
+        background-color: #262730;
+    }
+    
+    .stSelectbox > div > div {
+        background-color: #262730;
+        color: #fafafa;
+    }
+    
+    .stSlider > div > div {
+        background-color: #262730;
+    }
+    
+    .stButton > button {
+        background-color: #667eea;
+        color: #fafafa;
+        border: none;
+    }
+    
+    .stButton > button:hover {
+        background-color: #5a6fd8;
     }
 </style>
 """, unsafe_allow_html=True)

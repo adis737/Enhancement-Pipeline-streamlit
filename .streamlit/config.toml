@@ -21,8 +21,8 @@ showErrorDetails = false
 toolbarMode = "minimal"
 
 [theme]
-# Custom theme to hide elements
+# Dark mode theme
 primaryColor = "#667eea"
-backgroundColor = "#ffffff"
-secondaryBackgroundColor = "#f0f2f6"
-textColor = "#262730"
+backgroundColor = "#0e1117"
+secondaryBackgroundColor = "#262730"
+textColor = "#fafafa"
