@@ -13,18 +13,22 @@ Usage:
 import streamlit as st
 import io
 import os
+import sys
 import time
 import numpy as np
 from PIL import Image
 from skimage.metrics import peak_signal_noise_ratio, structural_similarity
 
 # Try to import OpenCV, but make it optional for cloud deployment
+OPENCV_AVAILABLE = False
 try:
     import cv2
+    # Test if OpenCV is working properly
+    test_array = cv2.imread("nonexistent.jpg")  # This should return None, not crash
     OPENCV_AVAILABLE = True
-except ImportError:
+except Exception as e:
     OPENCV_AVAILABLE = False
-    st.warning("⚠️ OpenCV not available - some features may be limited")
+    # Don't show warning immediately - let the app load first
 
 # Import the core enhancement functionality
 from udnet_infer import UDNetEnhancer
@@ -700,6 +704,23 @@ def main():
         opencv_status = "✅ Available" if OPENCV_AVAILABLE else "⚠️ Not Available"
         st.info(f"**Device:** {device}\n**GPU Mode:** {gpu_mode}\n**ONNX Available:** {onnx_session is not None}\n**OpenCV:** {opencv_status}")
         
+        # Debug information for OpenCV
+        if st.checkbox("Show OpenCV Debug Info"):
+            st.code(f"""
+OpenCV Available: {OPENCV_AVAILABLE}
+Python Version: {sys.version}
+Platform: {sys.platform}
+            """)
+            
+            if OPENCV_AVAILABLE:
+                try:
+                    import cv2
+                    st.success(f"OpenCV Version: {cv2.__version__}")
+                except Exception as e:
+                    st.error(f"OpenCV Error: {e}")
+            else:
+                st.warning("OpenCV is not available. Check the requirements.txt file.")
+        
         # Jetson simulation controls
         st.subheader("Jetson Simulation")
         jetson_device = st.selectbox("Jetson Device", list(JETSON_SPECS.keys()), index=2)
@@ -813,8 +834,14 @@ def main():
         st.header("🎬 Video Processing")
         
         if not OPENCV_AVAILABLE:
-            st.error("⚠️ Video processing requires OpenCV. Please install opencv-python or use the Flask version for video enhancement.")
-            st.info("To install OpenCV: `pip install opencv-python`")
+            st.error("⚠️ Video processing requires OpenCV")
+            st.info("**For local development:** `pip install opencv-python`")
+            st.info("**For Streamlit Cloud:** The app should automatically install `opencv-python-headless`")
+            st.warning("If you're seeing this on Streamlit Cloud, please check the deployment logs for OpenCV installation issues.")
+            
+            # Show a fallback option
+            st.subheader("Alternative: Use Image Processing")
+            st.info("While video processing is unavailable, you can still enhance individual frames using the Image Enhancement tab.")
         else:
             st.success("✅ Video processing is available!")
             
