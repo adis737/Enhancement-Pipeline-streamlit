@@ -21,8 +21,8 @@ matplotlib>=3.3.0
 tqdm>=4.50.0
 PyYAML>=5.3.0
 
-# Note: OpenCV is excluded due to system library dependencies
-# The app will use fallback implementations for UIQM calculation
+# OpenCV for video processing (headless version for cloud compatibility)
+opencv-python-headless>=4.4.0
 
 # Installation:
 # pip install -r requirements_streamlit_cloud.txt

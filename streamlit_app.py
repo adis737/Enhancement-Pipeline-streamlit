@@ -304,6 +304,225 @@ def enhance_image_onnx(pil_img, neutralize_cast=False, saturation=1.0):
         st.error(f"ONNX enhancement failed: {e}")
         return None
 
+def ensure_static_outputs():
+    """Ensure static outputs directory exists."""
+    out_dir = os.path.join("static", "outputs")
+    if not os.path.exists(out_dir):
+        os.makedirs(out_dir, exist_ok=True)
+    return out_dir
+
+def choose_frame_step(in_fps, target_fps=15.0):
+    """Choose frame step to achieve target FPS."""
+    if in_fps <= 0:
+        return 1
+    import math
+    step = max(1, int(math.ceil(in_fps / max(1.0, target_fps))))
+    return step
+
+def prep_frame_for_model(pil_img, max_side=512):
+    """Prepare frame for model processing."""
+    # Downscale for speed, then crop to multiple of 8
+    w, h = pil_img.size
+    scale = min(1.0, float(max_side) / float(max(w, h)))
+    if scale < 1.0:
+        new_w = max(8, int(round(w * scale)))
+        new_h = max(8, int(round(h * scale)))
+        pil_img = pil_img.resize((new_w, new_h), resample=Image.BICUBIC)
+    
+    # Multiple of 8 crop (center)
+    new_w = pil_img.size[0] - (pil_img.size[0] % 8)
+    new_h = pil_img.size[1] - (pil_img.size[1] % 8)
+    if new_w <= 0 or new_h <= 0:
+        return pil_img
+    if new_w != pil_img.size[0] or new_h != pil_img.size[1]:
+        left = (pil_img.size[0] - new_w) // 2
+        top = (pil_img.size[1] - new_h) // 2
+        pil_img = pil_img.crop((left, top, left + new_w, top + new_h))
+    
+    return pil_img
+
+def encode_video(frames_bgr, fps, out_path):
+    """Encode video from BGR frames."""
+    if not OPENCV_AVAILABLE:
+        raise RuntimeError("OpenCV not available for video encoding")
+    
+    if not frames_bgr:
+        raise RuntimeError("No frames to encode")
+    
+    h, w = frames_bgr[0].shape[:2]
+    w -= (w % 2)  # Ensure even dimensions
+    h -= (h % 2)
+    
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    writer = cv2.VideoWriter(out_path, fourcc, fps, (w, h))
+    
+    try:
+        for frame in frames_bgr:
+            # Resize frame to match writer dimensions
+            frame_resized = cv2.resize(frame, (w, h))
+            writer.write(frame_resized)
+    finally:
+        writer.release()
+
+def process_video_streamlit(uploaded_video, model_type, neutralize_cast, saturation, max_side=512, target_fps=15.0):
+    """Process video using Streamlit-compatible approach."""
+    if not OPENCV_AVAILABLE:
+        st.error("OpenCV not available - video processing requires OpenCV")
+        return None
+    
+    try:
+        import uuid
+        
+        # Save uploaded video to temporary file
+        out_dir = ensure_static_outputs()
+        temp_path = os.path.join(out_dir, f"temp_{uuid.uuid4().hex}.mp4")
+        
+        with open(temp_path, "wb") as f:
+            f.write(uploaded_video.getvalue())
+        
+        # Open video
+        cap = cv2.VideoCapture(temp_path)
+        if not cap.isOpened():
+            raise RuntimeError("Could not open uploaded video")
+        
+        # Get video properties
+        in_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        step = choose_frame_step(in_fps, target_fps)
+        out_fps = max(1.0, in_fps / float(step))
+        
+        st.info(f"Processing video: {total_frames} frames at {in_fps:.1f} FPS")
+        st.info(f"Target output: {out_fps:.1f} FPS (processing every {step} frame(s))")
+        
+        # Progress bar
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        frames_bgr = []
+        processed_frames = 0
+        idx = 0
+        
+        while True:
+            ok, frame = cap.read()
+            if not ok:
+                break
+            
+            # Skip frames based on step
+            if idx % step != 0:
+                idx += 1
+                continue
+            
+            idx += 1
+            
+            # Update progress
+            progress = min(1.0, idx / total_frames)
+            progress_bar.progress(progress)
+            status_text.text(f"Processing frame {idx}/{total_frames}")
+            
+            # Convert BGR to RGB
+            pil_frame = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+            original_size = pil_frame.size
+            
+            # Prepare frame for model
+            pil_processed = prep_frame_for_model(pil_frame, max_side)
+            
+            # Enhance frame
+            if model_type == "ONNX Runtime (CPU)" and st.session_state.onnx_session is not None:
+                # ONNX processing
+                sess = st.session_state.onnx_session
+                inp_name = sess.get_inputs()[0].name
+                out_name = sess.get_outputs()[0].name
+                
+                # Preprocess
+                arr = (np.asarray(pil_processed.convert("RGB"), dtype=np.float32) / 255.0)
+                chw = np.transpose(arr, (2, 0, 1))
+                inp = np.expand_dims(chw, 0).astype("float32")
+                
+                # Run inference
+                out = sess.run([out_name], {inp_name: inp})[0]
+                
+                # Postprocess
+                out = np.clip(out[0].transpose(1, 2, 0), 0.0, 1.0)
+                enhanced_pil = Image.fromarray((out * 255.0).round().astype("uint8"))
+            else:
+                # PyTorch processing
+                if st.session_state.enhancer is None:
+                    raise RuntimeError("PyTorch model not loaded")
+                
+                enhanced_pil = st.session_state.enhancer.enhance_image(
+                    pil_processed,
+                    max_side=None,
+                    neutralize_cast=neutralize_cast,
+                    saturation=saturation
+                )
+            
+            # Apply post-processing for ONNX
+            if model_type == "ONNX Runtime (CPU)":
+                if neutralize_cast:
+                    try:
+                        arr = np.asarray(enhanced_pil).astype("float32")
+                        mean = arr.reshape(-1, 3).mean(axis=0) + 1e-6
+                        gray = float(mean.mean())
+                        scale = gray / mean
+                        balanced = (arr * scale).clip(0, 255).astype("uint8")
+                        enhanced_pil = Image.fromarray(balanced)
+                    except Exception:
+                        pass
+                
+                if abs(saturation - 1.0) > 1e-3:
+                    try:
+                        from PIL import ImageEnhance
+                        enhanced_pil = ImageEnhance.Color(enhanced_pil).enhance(max(0.0, saturation))
+                    except Exception:
+                        pass
+            
+            # Resize back to original size
+            enhanced_pil = enhanced_pil.resize(original_size, resample=Image.BICUBIC)
+            
+            # Convert back to BGR for video encoding
+            bgr_frame = cv2.cvtColor(np.asarray(enhanced_pil), cv2.COLOR_RGB2BGR)
+            frames_bgr.append(bgr_frame)
+            
+            processed_frames += 1
+            
+            # Memory management - limit frames in memory
+            if len(frames_bgr) > 100:  # Process in chunks
+                # Save intermediate video
+                intermediate_path = os.path.join(out_dir, f"intermediate_{uuid.uuid4().hex}.mp4")
+                encode_video(frames_bgr, out_fps, intermediate_path)
+                frames_bgr = []  # Clear memory
+        
+        cap.release()
+        
+        # Final video encoding
+        if frames_bgr:
+            output_filename = f"enhanced_{model_type.lower().replace(' ', '_')}_{uuid.uuid4().hex}.mp4"
+            output_path = os.path.join(out_dir, output_filename)
+            encode_video(frames_bgr, out_fps, output_path)
+            
+            # Clean up temp file
+            try:
+                os.remove(temp_path)
+            except:
+                pass
+            
+            progress_bar.progress(1.0)
+            status_text.text(f"✅ Video processing complete! Processed {processed_frames} frames")
+            
+            return output_path, output_filename
+        else:
+            raise RuntimeError("No frames were processed")
+            
+    except Exception as e:
+        st.error(f"Video processing failed: {e}")
+        # Clean up temp file
+        try:
+            if 'temp_path' in locals():
+                os.remove(temp_path)
+        except:
+            pass
+        return None, None
+
 def simulate_jetson_performance():
     """Simulate Jetson performance metrics."""
     sim_data = st.session_state.jetson_sim_data
@@ -492,18 +711,123 @@ def main():
                             st.error(f"Enhancement failed: {e}")
     
     with tab2:
-        st.header("Video Processing")
-        st.info("🚧 Video processing feature coming soon! For now, use the Flask version for video enhancement.")
+        st.header("🎬 Video Processing")
         
-        # Placeholder for video processing
-        uploaded_video = st.file_uploader(
-            "Choose a video file",
-            type=['mp4', 'avi', 'mov'],
-            help="Upload a video for frame-by-frame enhancement"
-        )
-        
-        if uploaded_video is not None:
-            st.warning("Video processing is not yet implemented in the Streamlit version. Please use the Flask app for video enhancement.")
+        if not OPENCV_AVAILABLE:
+            st.error("⚠️ Video processing requires OpenCV. Please install opencv-python or use the Flask version for video enhancement.")
+            st.info("To install OpenCV: `pip install opencv-python`")
+        else:
+            st.success("✅ Video processing is available!")
+            
+            # Video processing parameters
+            col1, col2 = st.columns(2)
+            with col1:
+                max_side = st.slider("Max Frame Size", 256, 1024, 512, 64, help="Maximum frame dimension for processing")
+            with col2:
+                target_fps = st.slider("Target FPS", 5.0, 30.0, 15.0, 1.0, help="Target output frame rate")
+            
+            # File upload
+            uploaded_video = st.file_uploader(
+                "Choose a video file",
+                type=['mp4', 'avi', 'mov', 'mkv'],
+                help="Upload a video for frame-by-frame enhancement"
+            )
+            
+            if uploaded_video is not None:
+                # Display video info
+                st.subheader("Video Information")
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.metric("File Size", f"{uploaded_video.size / (1024*1024):.1f} MB")
+                with col2:
+                    st.metric("File Type", uploaded_video.type)
+                with col3:
+                    st.metric("Filename", uploaded_video.name)
+                
+                # Process video button
+                if st.button("🚀 Enhance Video", type="primary"):
+                    with st.spinner("Processing video... This may take a while."):
+                        start_time = time.time()
+                        
+                        try:
+                            # Process video
+                            output_path, output_filename = process_video_streamlit(
+                                uploaded_video, 
+                                model_type, 
+                                neutralize_cast, 
+                                saturation,
+                                max_side=max_side,
+                                target_fps=target_fps
+                            )
+                            
+                            processing_time = time.time() - start_time
+                            
+                            if output_path and output_filename:
+                                st.success(f"✅ Video enhancement complete in {processing_time:.1f} seconds!")
+                                
+                                # Display enhanced video
+                                st.subheader("Enhanced Video")
+                                
+                                # Read the output video file
+                                with open(output_path, "rb") as video_file:
+                                    video_bytes = video_file.read()
+                                
+                                # Display video
+                                st.video(video_bytes)
+                                
+                                # Download button
+                                st.download_button(
+                                    label="📥 Download Enhanced Video",
+                                    data=video_bytes,
+                                    file_name=output_filename,
+                                    mime="video/mp4"
+                                )
+                                
+                                # Processing statistics
+                                st.subheader("Processing Statistics")
+                                col1, col2, col3, col4 = st.columns(4)
+                                
+                                with col1:
+                                    st.metric("Processing Time", f"{processing_time:.1f}s")
+                                with col2:
+                                    st.metric("Model Used", model_type.split()[0])
+                                with col3:
+                                    st.metric("Max Frame Size", f"{max_side}px")
+                                with col4:
+                                    st.metric("Target FPS", f"{target_fps:.1f}")
+                                
+                                # Clean up output file after download
+                                try:
+                                    os.remove(output_path)
+                                except:
+                                    pass
+                            else:
+                                st.error("Video processing failed!")
+                                
+                        except Exception as e:
+                            st.error(f"Video processing failed: {e}")
+                            st.info("Try using a smaller video or reducing the max frame size.")
+                
+                # Video processing tips
+                with st.expander("💡 Video Processing Tips"):
+                    st.markdown("""
+                    **For Best Results:**
+                    - Use MP4 format for best compatibility
+                    - Keep videos under 100MB for faster processing
+                    - Lower max frame size for faster processing
+                    - Use ONNX model for better memory efficiency
+                    
+                    **Performance Guidelines:**
+                    - 512px max size: Good balance of quality/speed
+                    - 256px max size: Fastest processing
+                    - 1024px max size: Highest quality (slower)
+                    
+                    **Memory Management:**
+                    - Large videos are processed in chunks
+                    - Temporary files are automatically cleaned up
+                    - Processing may take several minutes for long videos
+                    """)
     
     with tab3:
         st.header("🚁 Jetson Deployment Demo")
