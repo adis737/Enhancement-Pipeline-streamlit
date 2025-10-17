@@ -132,16 +132,11 @@ def load_models():
     try:
         # Auto-select device
         import torch
-        device = "cuda:0" if torch.cuda.is_available() else "cpu"
-        gpu_mode = device.startswith("cuda")
+        # Force CPU mode for PyTorch to avoid CUDA issues
+        device = "cpu"
+        gpu_mode = False
         
-        # Load PyTorch model
-        weights_path = os.path.join("weights", "UDnet.pth")
-        enhancer = UDNetEnhancer(
-            weights_path=weights_path, device=device, gpu_mode=gpu_mode
-        )
-        
-        # Load ONNX model if available
+        # Load ONNX model first (more reliable and memory efficient)
         onnx_session = None
         try:
             import onnxruntime as ort
@@ -152,6 +147,17 @@ def load_models():
                     providers=["CPUExecutionProvider"]
                 )
         except Exception:
+            pass
+        
+        # Load PyTorch model as fallback (may fail due to memory)
+        enhancer = None
+        try:
+            weights_path = os.path.join("weights", "UDnet.pth")
+            enhancer = UDNetEnhancer(
+                weights_path=weights_path, device=device, gpu_mode=gpu_mode
+            )
+        except Exception as e:
+            # PyTorch model failed to load (likely memory issue)
             pass
         
         return enhancer, onnx_session, device, gpu_mode
@@ -364,6 +370,29 @@ def encode_video(frames_bgr, fps, out_path):
     finally:
         writer.release()
 
+def concatenate_videos(video_paths, output_path, fps):
+    """Concatenate multiple video files into one."""
+    if not OPENCV_AVAILABLE:
+        raise RuntimeError("OpenCV not available for video concatenation")
+    
+    if not video_paths:
+        raise RuntimeError("No videos to concatenate")
+    
+    # Read all videos and concatenate frames
+    all_frames = []
+    
+    for video_path in video_paths:
+        cap = cv2.VideoCapture(video_path)
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            all_frames.append(frame)
+        cap.release()
+    
+    # Encode concatenated video
+    encode_video(all_frames, fps, output_path)
+
 def process_video_streamlit(uploaded_video, model_type, neutralize_cast, saturation, max_side=512, target_fps=15.0):
     """Process video using Streamlit-compatible approach."""
     if not OPENCV_AVAILABLE:
@@ -394,13 +423,34 @@ def process_video_streamlit(uploaded_video, model_type, neutralize_cast, saturat
         st.info(f"Processing video: {total_frames} frames at {in_fps:.1f} FPS")
         st.info(f"Target output: {out_fps:.1f} FPS (processing every {step} frame(s))")
         
+        # Debug information
+        expected_processed = (total_frames + step - 1) // step
+        st.info(f"Expected frames to process: {expected_processed}")
+        
+        # Check model availability
+        if model_type == "ONNX Runtime (CPU)":
+            if st.session_state.onnx_session is None:
+                st.error("ONNX model not loaded! Please restart the app or check if the model file exists.")
+                return None, None
+            else:
+                st.success("ONNX model loaded successfully")
+        else:
+            if st.session_state.enhancer is None:
+                st.error("PyTorch model not loaded! This may be due to memory constraints. Try using ONNX model instead.")
+                return None, None
+            else:
+                st.success("PyTorch model loaded successfully")
+        
         # Progress bar
         progress_bar = st.progress(0)
         status_text = st.empty()
         
         frames_bgr = []
         processed_frames = 0
-        idx = 0
+        successful_frames = 0
+        frame_idx = 0
+        intermediate_videos = []  # Store paths to intermediate videos
+        total_frames_to_process = (total_frames + step - 1) // step  # Calculate expected processed frames
         
         while True:
             ok, frame = cap.read()
@@ -408,109 +458,158 @@ def process_video_streamlit(uploaded_video, model_type, neutralize_cast, saturat
                 break
             
             # Skip frames based on step
-            if idx % step != 0:
-                idx += 1
+            if frame_idx % step != 0:
+                frame_idx += 1
                 continue
             
-            idx += 1
-            
-            # Update progress
-            progress = min(1.0, idx / total_frames)
-            progress_bar.progress(progress)
-            status_text.text(f"Processing frame {idx}/{total_frames}")
-            
-            # Convert BGR to RGB
-            pil_frame = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-            original_size = pil_frame.size
-            
-            # Prepare frame for model
-            pil_processed = prep_frame_for_model(pil_frame, max_side)
-            
-            # Enhance frame
-            if model_type == "ONNX Runtime (CPU)" and st.session_state.onnx_session is not None:
-                # ONNX processing
-                sess = st.session_state.onnx_session
-                inp_name = sess.get_inputs()[0].name
-                out_name = sess.get_outputs()[0].name
-                
-                # Preprocess
-                arr = (np.asarray(pil_processed.convert("RGB"), dtype=np.float32) / 255.0)
-                chw = np.transpose(arr, (2, 0, 1))
-                inp = np.expand_dims(chw, 0).astype("float32")
-                
-                # Run inference
-                out = sess.run([out_name], {inp_name: inp})[0]
-                
-                # Postprocess
-                out = np.clip(out[0].transpose(1, 2, 0), 0.0, 1.0)
-                enhanced_pil = Image.fromarray((out * 255.0).round().astype("uint8"))
-            else:
-                # PyTorch processing
-                if st.session_state.enhancer is None:
-                    raise RuntimeError("PyTorch model not loaded")
-                
-                enhanced_pil = st.session_state.enhancer.enhance_image(
-                    pil_processed,
-                    max_side=None,
-                    neutralize_cast=neutralize_cast,
-                    saturation=saturation
-                )
-            
-            # Apply post-processing for ONNX
-            if model_type == "ONNX Runtime (CPU)":
-                if neutralize_cast:
-                    try:
-                        arr = np.asarray(enhanced_pil).astype("float32")
-                        mean = arr.reshape(-1, 3).mean(axis=0) + 1e-6
-                        gray = float(mean.mean())
-                        scale = gray / mean
-                        balanced = (arr * scale).clip(0, 255).astype("uint8")
-                        enhanced_pil = Image.fromarray(balanced)
-                    except Exception:
-                        pass
-                
-                if abs(saturation - 1.0) > 1e-3:
-                    try:
-                        from PIL import ImageEnhance
-                        enhanced_pil = ImageEnhance.Color(enhanced_pil).enhance(max(0.0, saturation))
-                    except Exception:
-                        pass
-            
-            # Resize back to original size
-            enhanced_pil = enhanced_pil.resize(original_size, resample=Image.BICUBIC)
-            
-            # Convert back to BGR for video encoding
-            bgr_frame = cv2.cvtColor(np.asarray(enhanced_pil), cv2.COLOR_RGB2BGR)
-            frames_bgr.append(bgr_frame)
-            
+            frame_idx += 1
             processed_frames += 1
             
-            # Memory management - limit frames in memory
-            if len(frames_bgr) > 100:  # Process in chunks
+            # Update progress based on processed frames
+            progress = min(1.0, processed_frames / total_frames_to_process)
+            progress_bar.progress(progress)
+            status_text.text(f"Processing frame {processed_frames}/{total_frames_to_process}")
+            
+            try:
+                # Convert BGR to RGB
+                pil_frame = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+                original_size = pil_frame.size
+                
+                # Prepare frame for model
+                pil_processed = prep_frame_for_model(pil_frame, max_side)
+                
+                # Enhance frame
+                if model_type == "ONNX Runtime (CPU)" and st.session_state.onnx_session is not None:
+                    # ONNX processing
+                    sess = st.session_state.onnx_session
+                    inp_name = sess.get_inputs()[0].name
+                    out_name = sess.get_outputs()[0].name
+                    
+                    # Preprocess
+                    arr = (np.asarray(pil_processed.convert("RGB"), dtype=np.float32) / 255.0)
+                    chw = np.transpose(arr, (2, 0, 1))
+                    inp = np.expand_dims(chw, 0).astype("float32")
+                    
+                    # Run inference
+                    out = sess.run([out_name], {inp_name: inp})[0]
+                    
+                    # Postprocess
+                    out = np.clip(out[0].transpose(1, 2, 0), 0.0, 1.0)
+                    enhanced_pil = Image.fromarray((out * 255.0).round().astype("uint8"))
+                else:
+                    # PyTorch processing
+                    if st.session_state.enhancer is None:
+                        raise RuntimeError("PyTorch model not loaded")
+                    
+                    enhanced_pil = st.session_state.enhancer.enhance_image(
+                        pil_processed,
+                        max_side=None,
+                        neutralize_cast=neutralize_cast,
+                        saturation=saturation
+                    )
+                
+                # Apply post-processing for ONNX
+                if model_type == "ONNX Runtime (CPU)":
+                    if neutralize_cast:
+                        try:
+                            arr = np.asarray(enhanced_pil).astype("float32")
+                            mean = arr.reshape(-1, 3).mean(axis=0) + 1e-6
+                            gray = float(mean.mean())
+                            scale = gray / mean
+                            balanced = (arr * scale).clip(0, 255).astype("uint8")
+                            enhanced_pil = Image.fromarray(balanced)
+                        except Exception:
+                            pass
+                    
+                    if abs(saturation - 1.0) > 1e-3:
+                        try:
+                            from PIL import ImageEnhance
+                            enhanced_pil = ImageEnhance.Color(enhanced_pil).enhance(max(0.0, saturation))
+                        except Exception:
+                            pass
+                
+                # Resize back to original size
+                enhanced_pil = enhanced_pil.resize(original_size, resample=Image.BICUBIC)
+                
+                # Convert back to BGR for video encoding
+                bgr_frame = cv2.cvtColor(np.asarray(enhanced_pil), cv2.COLOR_RGB2BGR)
+                frames_bgr.append(bgr_frame)
+                successful_frames += 1
+                
+                # Debug: Show progress every 10 frames
+                if successful_frames % 10 == 0:
+                    st.info(f"Successfully processed {successful_frames} frames so far...")
+                
+            except Exception as frame_error:
+                st.warning(f"Error processing frame {processed_frames}: {frame_error}")
+                # Continue processing other frames
+                continue
+            
+            # Memory management - only chunk for very large videos
+            if len(frames_bgr) > 500:  # Process in chunks only for large videos
                 # Save intermediate video
                 intermediate_path = os.path.join(out_dir, f"intermediate_{uuid.uuid4().hex}.mp4")
                 encode_video(frames_bgr, out_fps, intermediate_path)
+                intermediate_videos.append(intermediate_path)
+                st.info(f"Saved intermediate video with {len(frames_bgr)} frames")
                 frames_bgr = []  # Clear memory
         
         cap.release()
+        
+        # Debug information
+        st.info(f"Processing complete. Frames in memory: {len(frames_bgr)}, Successful frames: {successful_frames}")
         
         # Final video encoding
         if frames_bgr:
             output_filename = f"enhanced_{model_type.lower().replace(' ', '_')}_{uuid.uuid4().hex}.mp4"
             output_path = os.path.join(out_dir, output_filename)
-            encode_video(frames_bgr, out_fps, output_path)
             
-            # Clean up temp file
             try:
-                os.remove(temp_path)
-            except:
-                pass
+                encode_video(frames_bgr, out_fps, output_path)
+                
+                # Clean up temp file
+                try:
+                    os.remove(temp_path)
+                except:
+                    pass
+                
+                progress_bar.progress(1.0)
+                status_text.text(f"✅ Video processing complete! Processed {processed_frames} frames, {successful_frames} successful")
+                
+                return output_path, output_filename
+            except Exception as encode_error:
+                st.error(f"Video encoding failed: {encode_error}")
+                return None, None
+        elif intermediate_videos:
+            # Handle case with intermediate videos (for very large videos)
+            output_filename = f"enhanced_{model_type.lower().replace(' ', '_')}_{uuid.uuid4().hex}.mp4"
+            output_path = os.path.join(out_dir, output_filename)
             
-            progress_bar.progress(1.0)
-            status_text.text(f"✅ Video processing complete! Processed {processed_frames} frames")
-            
-            return output_path, output_filename
+            try:
+                concatenate_videos(intermediate_videos, output_path, out_fps)
+                
+                # Clean up intermediate files
+                for video_path in intermediate_videos:
+                    try:
+                        os.remove(video_path)
+                    except:
+                        pass
+                
+                # Clean up temp file
+                try:
+                    os.remove(temp_path)
+                except:
+                    pass
+                
+                progress_bar.progress(1.0)
+                status_text.text(f"✅ Video processing complete! Processed {processed_frames} frames, {successful_frames} successful")
+                
+                return output_path, output_filename
+            except Exception as encode_error:
+                st.error(f"Video concatenation failed: {encode_error}")
+                return None, None
         else:
+            st.error(f"No frames were processed. Total frames: {total_frames}, Step: {step}, Expected processed: {total_frames_to_process}, Successful: {successful_frames}")
             raise RuntimeError("No frames were processed")
             
     except Exception as e:
@@ -584,11 +683,11 @@ def main():
     with st.sidebar:
         st.header("🎛️ Controls")
         
-        # Model selection
+        # Model selection (prioritize ONNX for better compatibility)
         model_type = st.selectbox(
             "Select Model",
-            ["PyTorch (GPU/CPU)", "ONNX Runtime (CPU)"],
-            help="Choose between PyTorch model (faster on GPU) or ONNX model (CPU optimized)"
+            ["ONNX Runtime (CPU)", "PyTorch (GPU/CPU)"],
+            help="ONNX model is recommended for better compatibility and memory efficiency"
         )
         
         # Enhancement parameters
